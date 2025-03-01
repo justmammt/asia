@@ -1,0 +1,129 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_EXTERNAL_URL")
+}
+
+enum MaintenanceType {
+  OIL_CHANGE
+  TIRE_ROTATION
+  BRAKE_SERVICE
+  FILTER_REPLACEMENT
+  INSPECTION
+  OTHER
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  name               String    @map("name")
+  email              String    @unique
+  password           String
+  otp                String?   @map("otp")
+  otpExpiry          DateTime? @map("otp_expiry")
+  passwordResetToken String?   @map("password_reset_token")
+  passwordResetExpiry DateTime? @map("password_reset_expiry")
+  failedLoginAttempts Int      @default(0) @map("failed_login_attempts")
+  lastFailedLogin    DateTime? @map("last_failed_login")
+  lastLogin          DateTime?  @map("last_login")
+  accountLocked      Boolean   @default(false) @map("account_locked")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+  vehicles           Vehicle[]
+  settings           UserSettings?
+  auditLogs          AuditLog[]
+}
+
+model Vehicle {
+  id                 String    @id @default(uuid())
+  plateNumber        String    @unique @map("plate_number")
+  type               String    @map("type")
+  color              String?
+  userId             String    @map("user_id")
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+  maintenanceLogs    MaintenanceLog[]
+  faults             Fault[]
+  sharedLinks        SharedLink[]
+  insuranceInterval  Int?      @map("insurance_interval")
+  taxInterval        Int?      @map("tax_interval")
+  insuranceDue       DateTime  @map("insurance_due")
+  taxDue             DateTime  @map("tax_due")
+  inspectionDue      DateTime  @map("inspection_due")
+  damageStatus       String?   @default("NONE") @map("damage_status")
+  damageDescription  String?   @map("damage_description")
+  damageReports      DamageReport[]
+  colorHistory       VehicleColorHistory[]
+}
+
+model VehicleColorHistory {
+  id        String   @id @default(uuid())
+  vehicleId String   @map("vehicle_id")
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  oldColor  String?
+  newColor  String
+  changedAt DateTime @default(now()) @map("changed_at")
+}
+
+// Other existing models remain unchanged...
+model MaintenanceLog {
+  id                 String    @id @default(uuid())
+  vehicleId          String    @map("vehicle_id")
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type               MaintenanceType
+  dueAt              DateTime  @map("due_at")
+  completedAt        DateTime? @map("completed_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+}
+
+model Fault {
+  id                 String    @id @default(uuid())
+  vehicleId          String    @map("vehicle_id")
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  description        String
+  resolved           Boolean   @default(false)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+}
+
+model SharedLink {
+  id                 String    @id @default(uuid())
+  vehicleId          String    @map("vehicle_id")
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  token              String    @unique
+  expiresAt          DateTime  @map("expires_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  description        String    @map("description")
+}
+
+model UserSettings {
+  id                 String    @id @default(uuid())
+  userId             String    @unique @map("user_id")
+  user               User      @relation(fields: [userId], references: [id])
+  notificationDays   Int       @default(7) @map("notification_days")
+  redThreshold       Int       @default(10) @map("red_threshold")
+  orangeThreshold    Int       @default(25) @map("orange_threshold")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+}
+
+model AuditLog {
+  id                 String    @id @default(uuid())
+  userId             String    @map("user_id")
+  user               User      @relation(fields: [userId], references: [id])
+  action             String
+  details            Json?
+  createdAt          DateTime  @default(now()) @map("created_at")
+}
+
+model DamageReport {
+  id                 String    @id @default(uuid())
+  vehicleId          String    @map("vehicle_id")
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  description        String
+  severity           String    @default("minor") // minor, moderate, severe
+  reportedAt         DateTime  @default(now()) @map("reported_at")
+  resolvedAt         DateTime? @map("resolved_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+}

@@ -1,0 +1,1048 @@
+openapi: 3.1.0
+swagger: "2.0"
+info:
+  title: Vehicle Tracking API
+  version: 1.0.0
+  description: API for managing vehicle tracking, maintenance schedules, and shared access
+  contact:
+    name: API Support
+    email: support@vehicletracking.com
+  license:
+    name: MIT
+
+servers:
+  - url: https://api.vehicletracking.com/v1
+    description: Production server
+  - url: http://localhost:3000/v1
+    description: Local development server
+
+paths:
+  /auth/signup:
+    post:
+      tags: [Authentication]
+      summary: Register new user
+      description: Creates a new user account and sends 2FA verification code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        202:
+          description: 2FA code sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignupResponse'
+        400:
+          description: Invalid registration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        409:
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/request-otp:
+    post:
+      tags: [Authentication]
+      summary: Request OTP
+      description: Sends a one-time password to the user's email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+      responses:
+        200:
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "OTP sent to your email"
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login with OTP
+      description: Authenticates user with email, password and OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, otp]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+                password:
+                  type: string
+                  example: "P@ssw0rd123!"
+                otp:
+                  type: string
+                  pattern: "^\\d{6}$"
+                  example: "123456"
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        400:
+          description: Invalid credentials or OTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Invalid or expired OTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        429:
+          description: Too many failed attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+
+  /share/generate:
+    post:
+      tags: [Sharing]
+      summary: Generate shareable link
+      description: Creates a time-limited shareable link for vehicle access
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SharedLinkRequest'
+      responses:
+        201:
+          description: Share link created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedLinkResponse'
+        400:
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /share:
+    get:
+      tags: [Sharing]
+      summary: List shared links
+      description: Get list of shared links with pagination and filtering
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, expired, all]
+            default: active
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [createdAt, expiresAt]
+            default: createdAt
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        200:
+          description: List of shared links
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedLinksResponse'
+        400:
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /share/{token}:
+    get:
+      tags: [Sharing]
+      summary: View shared link details
+      description: Get detailed information about a shared link including vehicle details and expiration status
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{16}$"
+            example: "ah2bda82bfjak29a"
+      responses:
+        200:
+          description: Shared link details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedLinkDetails'
+        400:
+          description: Invalid token format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        404:
+          description: Shared link not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /share/revoke/{token}:
+    post:
+      tags: [Sharing]
+      summary: Revoke shared link
+      description: Immediately revokes an active shared link
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9]{16}$"
+            example: "ah2bda82bfjak29a"
+      responses:
+        204:
+          description: Link successfully revoked
+        404:
+          description: Link not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /vehicles:
+    post:
+      tags: [Vehicles]
+      summary: Add new vehicle
+      description: Register a new vehicle for tracking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleRequest'
+      responses:
+        201:
+          description: Vehicle created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleResponse'
+        400:
+          description: Invalid vehicle data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Vehicles]
+      summary: List vehicles
+      description: Get list of vehicles with maintenance status
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: List of vehicles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /vehicles/{id}:
+    put:
+      tags: [Vehicles]
+      summary: Update vehicle
+      description: Update vehicle details and maintenance intervals
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleRequest'
+      responses:
+        200:
+          description: Vehicle updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleResponse'
+        400:
+          description: Invalid vehicle data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        404:
+          description: Vehicle not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Vehicles]
+      summary: Delete vehicle
+      description: Permanently delete a vehicle and its associated data
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        204:
+          description: Vehicle deleted successfully
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        404:
+          description: Vehicle not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /vehicles/search:
+    get:
+      tags: [Vehicles]
+      summary: Search vehicles
+      description: Search vehicles by various criteria with sorting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plate
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "AB123"
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [car, motorcycle, truck, military]
+            example: "car"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/DamageStatus'
+        - name: thresholdColor
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [red, orange, green, gray]
+            example: "green"
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [plate, type, status, insuranceDue, taxDue, inspectionDue]
+            example: "plate"
+        - name: sortOrder
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            example: "asc"
+      responses:
+        200:
+          description: List of matching vehicles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleResponse'
+        400:
+          description: Invalid search parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /vehicles/{id}/damage-reports:
+    post:
+      tags: [Damage Reports]
+      summary: Create damage report
+      description: Create a new damage report for a vehicle
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DamageReportRequest'
+      responses:
+        201:
+          description: Damage report created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DamageReportResponse'
+        400:
+          description: Invalid damage report data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Damage Reports]
+      summary: Get damage reports
+      description: Get list of damage reports for a vehicle
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: List of damage reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DamageReportResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /settings:
+    get:
+      tags: [Settings]
+      summary: Get user settings
+      description: Retrieve current user settings
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSettings'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Settings]
+      summary: Update user settings
+      description: Update notification and threshold settings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserSettings'
+      responses:
+        200:
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSettings'
+        400:
+          description: Invalid settings data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained during authentication
+
+  schemas:
+    DamageStatus:
+      type: string
+      enum: [NONE, MINOR, MODERATE, SEVERE]
+      example: "NONE"
+
+    SignupRequest:
+      type: object
+      required: [email, password, timezone]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          minLength: 12
+          maxLength: 72
+          pattern: "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{12,72}$"
+          description: Must contain at least one uppercase, one lowercase, one number and one special character
+        timezone:
+          type: string
+          enum: ["Europe/Rome"]
+          example: "Europe/Rome"
+        firstName:
+          type: string
+          maxLength: 50
+          example: "Mario"
+        lastName:
+          type: string
+          maxLength: 50
+          example: "Rossi"
+
+    SignupResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "2FA code sent to your email"
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2025-02-25T23:44:42Z"
+      example:
+        message: "2FA code sent to your email"
+        expiresAt: "2025-02-25T23:44:42Z"
+
+    Verify2FARequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        code:
+          type: string
+          pattern: "^\\d{6}$"
+          example: "123456"
+
+    Verify2FAResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT token for authenticated requests
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expiresIn:
+          type: integer
+          description: Token expiration in seconds
+          example: 3600
+
+    SharedLinkRequest:
+      type: object
+      required: [vehicleId, expiresInHours]
+      properties:
+        vehicleId:
+          type: string
+          format: uuid
+          example: "d7d98f80-05f3-4110-9af9-3f5c7e0b8ac1"
+        expiresInHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          example: 48
+        description:
+          type: string
+          maxLength: 255
+          example: "Temporary access for mechanic"
+
+    SharedLinkResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          example: "ah2bda82bfjak29a"
+        url:
+          type: string
+          format: uri
+          example: "https://api.example.com/share/ah2bda82bfjak29a"
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2025-02-27T23:38:35Z"
+      example:
+        token: "ah2bda82bfjak29a"
+        url: "https://api.example.com/share/ah2bda82bfjak29a"
+        expiresAt: "2025-02-27T23:38:35Z"
+
+    SharedLinkDetails:
+      type: object
+      properties:
+        token:
+          type: string
+          example: "ah2bda82bfjak29a"
+        vehicle:
+          $ref: '#/components/schemas/VehicleResponse'
+        createdBy:
+          type: string
+          format: email
+          example: "user@example.com"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-02-27T23:38:35Z"
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2025-02-27T23:38:35Z"
+        status:
+          type: string
+          enum: [active, expired, revoked]
+          example: "active"
+        description:
+          type: string
+          nullable: true
+          example: "Temporary access for mechanic"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid token"
+        code:
+          type: string
+          example: "INVALID_TOKEN"
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: "expiresInHours"
+              message:
+                type: string
+                example: "must be between 1 and 168"
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+                example: "vehicleId"
+              message:
+                type: string
+                example: "must be a valid UUID"
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 123
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 7
+
+    VehicleRequest:
+      type: object
+      required: [plate, type]
+      properties:
+        plate:
+          type: string
+          pattern: "^([A-Z]{2}[\\s-]?[0-9]{3}[\\s-]?[A-Z]{2}|[A-Z]{2}[\\s-]?[0-9]{4}[A-Z]{2})$"
+          example: "AB123CD"
+        type:
+          type: string
+          enum: ["car", "motorcycle", "truck", "military"]
+          example: "car"
+        insuranceInterval:
+          type: integer
+          minimum: 1
+          example: 365
+        taxInterval:
+          type: integer
+          minimum: 1
+          example: 365
+        inspectionInterval:
+          type: integer
+          minimum: 1
+          example: 365
+        damageStatus:
+          $ref: '#/components/schemas/DamageStatus'
+        damageDescription:
+          type: string
+          nullable: true
+          example: "Scratch on rear bumper"
+
+    VehicleResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "d7d98f80-05f3-4110-9af9-3f5c7e0b8ac1"
+        plate:
+          type: string
+          example: "AB123CD"
+        type:
+          type: string
+          example: "car"
+        insuranceDue:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-02-27T23:38:35Z"
+        taxDue:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-02-27T23:38:35Z"
+        inspectionDue:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-02-27T23:38:35Z"
+        damageStatus:
+          $ref: '#/components/schemas/DamageStatus'
+        damageDescription:
+          type: string
+          nullable: true
+          example: "Scratch on rear bumper"
+        status:
+          type: object
+          properties:
+            insurance:
+              type: string
+              enum: ["red", "orange", "green", "gray"]
+              example: "green"
+            tax:
+              type: string
+              enum: ["red", "orange", "green", "gray"]
+              example: "green"
+            inspection:
+              type: string
+              enum: ["red", "orange", "green", "gray"]
+              example: "green"
+      example:
+        id: "d7d98f80-05f3-4110-9af9-3f5c7e0b8ac1"
+        plate: "AB123CD"
+        type: "car"
+        insuranceDue: "2025-02-27T23:38:35Z"
+        taxDue: "2025-02-27T23:38:35Z"
+        inspectionDue: "2025-02-27T23:38:35Z"
+        damageStatus: "NONE"
+        damageDescription: null
+        status:
+          insurance: "green"
+          tax: "green"
+          inspection: "green"
+
+    DamageReportRequest:
+      type: object
+      required: [description, severity]
+      properties:
+        description:
+          type: string
+          minLength: 10
+          maxLength: 1000
+          example: "Scratch on rear bumper"
+        severity:
+          type: string
+          enum: ["minor", "moderate", "severe"]
+          example: "minor"
+
+    DamageReportResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "d7d98f80-05f3-4110-9af9-3f5c7e0b8ac1"
+        description:
+          type: string
+          example: "Scratch on rear bumper"
+        severity:
+          type: string
+          example: "minor"
+        reportedAt:
+          type: string
+          format: date-time
+          example: "2025-02-27T23:38:35Z"
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+      example:
+        id: "d7d98f80-05f3-4110-9af9-3f5c7e0b8ac1"
+        description: "Scratch on rear bumper"
+        severity: "minor"
+        reportedAt: "2025-02-27T23:38:35Z"
+        resolvedAt: null
+
+    UserSettings:
+      type: object
+      properties:
+        notificationDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 7
+        redThreshold:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 10
+        orangeThreshold:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 25
+      example:
+        notificationDays: 7
+        redThreshold: 10
+        orangeThreshold: 25
+
+    RateLimitError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Too many requests"
+        code:
+          type: string
+          example: "RATE_LIMIT_EXCEEDED"
+        retryAfter:
+          type: integer
+          description: "Seconds to wait before next attempt"
+          example: 300
+        emergencyEmailSent:
+          type: boolean
+          description: "Whether an emergency email was sent"
+          example: true
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT token for authenticated requests
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expiresIn:
+          type: integer
+          description: Token expiration in seconds
+          example: 3600
+        lastLogin:
+          type: string
+          format: date-time
+          description: Timestamp of last successful login
+          example: "2025-02-27T23:38:35Z"
+
+    SharedLinksResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SharedLinkResponse'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+      example:
+        data:
+          - token: "ah2bda82bfjak29a"
+            url: "https://api.example.com/share/ah2bda82bfjak29a"
+            expiresAt: "2025-02-27T23:38:35Z"
+          - token: "bh3cdb93cgkbl30b"
+            url: "https://api.example.com/share/bh3cdb93cgkbl30b"
+            expiresAt: "2025-02-28T12:00:00Z"
+        pagination:
+          page: 1
+          pageSize: 20
+          totalItems: 123
+          totalPages: 7
